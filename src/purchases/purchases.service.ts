@@ -7,14 +7,14 @@ import { Repository, UpdateResult } from 'typeorm';
 import { ManagerError } from 'src/common/errors/manager.error';
 import { PaginationDto } from 'src/common/dtos/pagination/pagination.dto';
 import { ResponseAllPurchases } from './interfaces/response-purchases.interface';
+import { ApiAllResponse } from 'src/common/interfaces/api-response.interface';
 
 @Injectable()
 export class PurchasesService {
-
   constructor(
     @InjectRepository(PurchaseEntity)
-    private readonly purchaseRepository: Repository<PurchaseEntity>
-  ) { }
+    private readonly purchaseRepository: Repository<PurchaseEntity>,
+  ) {}
 
   async create(createPurchaseDto: CreatePurchaseDto): Promise<PurchaseEntity> {
     try {
@@ -31,7 +31,7 @@ export class PurchasesService {
     }
   }
 
-  async findAll(paginationDto: PaginationDto): Promise<ResponseAllPurchases> {
+  async findAll(paginationDto: PaginationDto): Promise<ApiAllResponse<PurchaseEntity>> {
     const { limit, page } = paginationDto;
     const skip = (page - 1) * limit;
 
@@ -40,27 +40,31 @@ export class PurchasesService {
       // const data = await this.categoryRepository.find({ where: { isActive: true }, take: limit, skip: skip })
       const [total, data] = await Promise.all([
         this.purchaseRepository.count({ where: { isActive: true } }),
-        this.purchaseRepository.createQueryBuilder('purchase')
+        this.purchaseRepository
+          .createQueryBuilder('purchase')
           .where({ isActive: true })
           .leftJoinAndSelect('purchase.paymentMethod', 'paymentMethod')
+          .leftJoinAndSelect('purchase.customer', 'customer')
           .take(limit)
           .skip(skip)
-          .getMany()
+          .getMany(),
       ]);
       const lastPage = Math.ceil(total / limit);
 
       if (!data) {
         new ManagerError({
-          type: "NOT_FOUND",
-          message: "No hay Purchases"
-        })
+          type: 'NOT_FOUND',
+          message: 'No hay Purchases',
+        });
       }
 
       return {
-        page,
-        limit,
-        lastPage,
-        total,
+        meta: {
+          page,
+          limit,
+          lastPage,
+          total,
+        },
         data,
       };
     } catch (error) {
@@ -70,10 +74,12 @@ export class PurchasesService {
 
   async findOne(id: string): Promise<PurchaseEntity> {
     try {
-      const purchase = await this.purchaseRepository.createQueryBuilder('purchase')
+      const purchase = await this.purchaseRepository
+        .createQueryBuilder('purchase')
         .where({ isActive: true })
         .leftJoinAndSelect('purchase.paymentMethod', 'paymentMethod')
-        .getOne()
+        .leftJoinAndSelect('purchase.customer', 'customer')
+        .getOne();
 
       if (!purchase) {
         throw new ManagerError({
@@ -88,9 +94,15 @@ export class PurchasesService {
     }
   }
 
-  async update(id: string, updatePurchaseDto: UpdatePurchaseDto): Promise<UpdateResult> {
+  async update(
+    id: string,
+    updatePurchaseDto: UpdatePurchaseDto,
+  ): Promise<UpdateResult> {
     try {
-      const purchase = await this.purchaseRepository.update(id, updatePurchaseDto)
+      const purchase = await this.purchaseRepository.update(
+        id,
+        updatePurchaseDto,
+      );
       if (purchase.affected === 0) {
         throw new ManagerError({
           type: 'NOT_FOUND',
@@ -106,7 +118,10 @@ export class PurchasesService {
 
   async remove(id: string): Promise<UpdateResult> {
     try {
-      const purchase = await this.purchaseRepository.update({ id }, { isActive: false })
+      const purchase = await this.purchaseRepository.update(
+        { id },
+        { isActive: false },
+      );
       if (purchase.affected === 0) {
         throw new ManagerError({
           type: 'NOT_FOUND',
